@@ -23,6 +23,7 @@ function startWhatsApp() {
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     },
   });
+  const self = client;
 
   readyPromise = new Promise((resolve, reject) => {
     client.on('qr', (qr) => {
@@ -49,11 +50,55 @@ function startWhatsApp() {
       resolve(client);
     });
     client.on('auth_failure', (msg) => reject(new Error(`WhatsApp auth failed: ${msg}`)));
-    client.on('disconnected', (reason) => log.warn('WhatsApp disconnected:', reason));
+    client.on('disconnected', (reason) => {
+      // Start fresh on the next send instead of reusing a dead client
+      log.warn('WhatsApp disconnected:', reason);
+      if (client === self) readyPromise = null;
+    });
   });
+  // A failed start must not stick: let the next call try again
+  const pending = readyPromise;
+  pending.catch(() => { if (readyPromise === pending) readyPromise = null; });
 
-  client.initialize();
+  client.initialize().catch((err) => log.error('WhatsApp failed to start:', err.message));
   return readyPromise;
+}
+
+/** True if the WhatsApp browser is still connected and logged in (it isn't after the PC sleeps). */
+async function isAlive() {
+  if (!client || !client.pupBrowser || !client.pupBrowser.connected || !client.pupPage || client.pupPage.isClosed()) return false;
+  try {
+    const state = await Promise.race([
+      client.getState(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 15000)),
+    ]);
+    return state === 'CONNECTED';
+  } catch {
+    return false;
+  }
+}
+
+/** Closes the old WhatsApp browser and logs in again from the saved session. */
+async function reconnect() {
+  log.warn('Reconnecting WhatsApp...');
+  const old = client;
+  client = null;
+  readyPromise = null;
+  if (old) {
+    await old.destroy().catch(() => {});
+    const proc = old.pupBrowser && old.pupBrowser.process && old.pupBrowser.process();
+    if (proc && !proc.killed) proc.kill();
+  }
+  return Promise.race([
+    startWhatsApp(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp did not reconnect within 2 minutes (QR scan needed?)')), 120000)),
+  ]);
+}
+
+/** Makes sure WhatsApp is usable before a run, reconnecting if the connection died. */
+async function ensureWhatsApp() {
+  if (await isAlive()) return client;
+  return reconnect();
 }
 
 /**
@@ -108,12 +153,22 @@ async function sendMessage(target, text) {
   log.info(`Message sent to ${chatId}`);
 }
 
+/** Sends the image; if that fails (e.g. a dead connection), reconnects and tries once more. */
 async function sendImage(target, base64Png, caption) {
-  await startWhatsApp();
-  const chatId = await resolveChatId(target);
-  const media = new MessageMedia('image/png', base64Png, 'sheet.png');
-  await client.sendMessage(chatId, media, { caption });
-  log.info(`Screenshot sent to ${chatId}`);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await ensureWhatsApp();
+      const chatId = await resolveChatId(target);
+      const media = new MessageMedia('image/png', base64Png, 'sheet.png');
+      await client.sendMessage(chatId, media, { caption });
+      log.info(`Screenshot sent to ${chatId}`);
+      return;
+    } catch (err) {
+      if (attempt >= 2) throw err;
+      log.warn(`Sending failed (${err.message}), reconnecting and retrying`);
+      await reconnect();
+    }
+  }
 }
 
 /** The Chrome instance WhatsApp is running in, reused for screenshots. */

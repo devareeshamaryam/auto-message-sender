@@ -3,7 +3,7 @@ const sheets = require('./sheets');
 const { findDailyTables, summariseTable } = require('./daily');
 const { findStoreRow, buildRowValues } = require('./target');
 const { captureReport } = require('./screenshot');
-const { sendImage, getBrowser } = require('./whatsapp');
+const { sendImage } = require('./whatsapp');
 const log = require('./logger');
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
@@ -49,7 +49,8 @@ async function runJob({ date = reportDate(), send = true, write = true } = {}) {
 
     // Export after writing so the screenshot shows the updated sheet
     const zip = await sheets.exportHtmlZip(targetId);
-    const image = await captureReport(zip, tab, config.google.hourlyLastColumn, send ? getBrowser() : undefined);
+    // Own short-lived browser, so a broken WhatsApp connection can't block the screenshot
+    const image = await captureReport(zip, tab, config.google.hourlyLastColumn);
     const caption = buildCaption();
 
     if (send) await sendImage(config.whatsapp.target(), image, caption);
