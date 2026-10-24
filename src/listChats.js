@@ -1,4 +1,6 @@
+// Lists your WhatsApp groups and channels with their IDs, using the same saved session as the bot.
 const { startWhatsApp } = require('./whatsapp');
+const log = require('./logger');
 
 (async () => {
   const client = await startWhatsApp();
@@ -12,4 +14,7 @@ const { startWhatsApp } = require('./whatsapp');
     channels.forEach((c) => console.log(`  ${c.name}  ->  ${c.id._serialized}`));
   }
   process.exit(0);
-})();
+})().catch((err) => {
+  log.error(err.message);
+  process.exit(1);
+});

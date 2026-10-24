@@ -7,7 +7,8 @@
     "start": "node src/index.js",
     "run-once": "node src/index.js --now",
     "list-chats": "node src/listChats.js",
-    "preview": "node src/preview.js"
+    "preview": "node src/preview.js",
+    "test-send": "node src/testSend.js"
   },
   "engines": {
     "node": ">=18"

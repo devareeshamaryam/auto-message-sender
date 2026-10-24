@@ -1,9 +1,9 @@
 const config = require('./config');
 const sheets = require('./sheets');
 const { findDailyTables, summariseTable } = require('./daily');
-const { findTargetRow, buildRowValues } = require('./target');
-const { captureTables } = require('./screenshot');
-const { sendMessage, sendImage, getBrowser } = require('./whatsapp');
+const { findStoreRow, buildRowValues } = require('./target');
+const { captureReport } = require('./screenshot');
+const { sendImage, getBrowser } = require('./whatsapp');
 const log = require('./logger');
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
@@ -11,8 +11,9 @@ const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 
 let running = false;
 
 /**
- * One run: for each store, find the report day's table in its sheet, write the
- * figures into that day's row of the target, then send screenshots.
+ * One run: for each store, find today's table in its sheet and write the
+ * figures into its row of the target's HOURLY tab, then send one screenshot
+ * of the HOURLY report captioned "Till <hour>". Nothing else is sent.
  * Options for testing: { date: 'YYYY-MM-DD', send: false, write: false }.
  */
 async function runJob({ date = reportDate(), send = true, write = true } = {}) {
@@ -25,47 +26,50 @@ async function runJob({ date = reportDate(), send = true, write = true } = {}) {
 
   try {
     const targetId = config.google.targetId();
-    const targetTab = config.google.targetTab;
+    const tab = await resolveTab(targetId, config.google.hourlyTab);
     log.info(`Report date ${date}`);
 
-    const targetGrid = await sheets.readGrid(targetId, targetTab);
+    // A store whose day can't be read is skipped, so the screenshot is always sent
+    const grid = await sheets.readGrid(targetId, tab);
     for (const store of config.stores) {
-      const day = await readStoreDay(store, date);
-      const row = findTargetRow(targetGrid, store.targetTitle, date);
-      const values = buildRowValues(day);
-      if (write) {
-        await sheets.updateRange(targetId, `${sheets.quoteTab(targetTab)}!C${row}:P${row}`, [values]);
-        log.info(`${store.name}: wrote row ${row} (total $${day.total.toFixed(2)})`);
-      } else {
-        log.info(`${store.name}: would write row ${row} C:P = ${JSON.stringify(values)} (total $${day.total.toFixed(2)})`);
+      try {
+        const day = await readStoreDay(store, date);
+        const row = findStoreRow(grid, store.hourlyLabel);
+        const values = buildRowValues(day);
+        if (write) {
+          await sheets.updateRange(targetId, `${sheets.quoteTab(tab)}!C${row}:K${row}`, [values]);
+          log.info(`${store.name}: wrote HOURLY row ${row} (total $${day.total.toFixed(2)})`);
+        } else {
+          log.info(`${store.name}: would write HOURLY row ${row} C:K = ${JSON.stringify(values)} (total $${day.total.toFixed(2)})`);
+        }
+      } catch (err) {
+        log.warn(`${store.name}: not updated - ${err.message}`);
       }
     }
 
-    // Export after writing so the screenshots show the updated sheet
+    // Export after writing so the screenshot shows the updated sheet
     const zip = await sheets.exportHtmlZip(targetId);
-    const shots = await captureTables(zip, targetTab, config.stores.map((s) => s.targetTitle), send ? getBrowser() : undefined);
+    const image = await captureReport(zip, tab, config.google.hourlyLastColumn, send ? getBrowser() : undefined);
+    const caption = buildCaption();
 
-    if (send) {
-      const caption = buildCaption();
-      for (let i = 0; i < shots.length; i++) {
-        await sendImage(config.whatsapp.target(), shots[i].image, `${config.stores[i].name} - ${caption}`);
-      }
-    }
-    log.info(`Run finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
-    return shots;
+    if (send) await sendImage(config.whatsapp.target(), image, caption);
+    log.info(`Run finished in ${((Date.now() - started) / 1000).toFixed(1)}s (caption "${caption}")`);
+    return [{ title: 'HOURLY', image }];
   } catch (err) {
     log.error('Run failed:', err.message);
     if (!send) throw err;
-    try {
-      await sendMessage(config.whatsapp.target(), `⚠️ Sheet sync failed: ${err.message}`);
-    } catch (notifyErr) {
-      log.error('Could not send failure message:', notifyErr.message);
-    }
   } finally {
     running = false;
   }
 }
 
+/** The tab's real title, ignoring case and stray spaces (the HOURLY tab is named "HOURLY "). */
+async function resolveTab(spreadsheetId, name) {
+  const tabs = await sheets.listTabs(spreadsheetId);
+  const tab = tabs.find((t) => t.title.trim().toLowerCase() === name.trim().toLowerCase());
+  if (!tab) throw new Error(`Target has no tab named "${name}"`);
+  return tab.title;
+}
 /** Finds and summarises the store's daily table for `date`, checking this month's tabs first. */
 async function readStoreDay(store, date) {
   const id = store.sourceId();
@@ -95,13 +99,13 @@ function reportDate(now = new Date()) {
   return day.toISOString().slice(0, 10);
 }
 
-/** Caption under each screenshot, e.g. "19 Oct 2026, 2:00 pm". */
-function buildCaption() {
-  return new Date().toLocaleString('en-GB', {
-    timeZone: config.schedule.timezone,
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: 'numeric', minute: '2-digit', hour12: true,
-  });
+/** Caption under the screenshot: the current hour in store time, e.g. "Till 1 PM". */
+function buildCaption(now = new Date()) {
+  const hour = Number(new Intl.DateTimeFormat('en-US', {
+    timeZone: config.schedule.timezone, hour: 'numeric', hourCycle: 'h23',
+  }).format(now));
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `Till ${h12} ${hour < 12 ? 'AM' : 'PM'}`;
 }
 
 module.exports = { runJob, reportDate };
