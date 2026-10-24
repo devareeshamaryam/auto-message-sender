@@ -1,0 +1,23 @@
+{
+  "name": "sheets-whatsapp-bot",
+  "version": "1.0.0",
+  "description": "Copies each store's daily sales totals into the monthly target sheet and posts screenshots to a WhatsApp group on a schedule.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "run-once": "node src/index.js --now",
+    "list-chats": "node src/listChats.js",
+    "preview": "node src/preview.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "dotenv": "^16.4.5",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.0"
+  }
+}
