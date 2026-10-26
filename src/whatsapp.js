@@ -1,6 +1,7 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const config = require('./config');
+const { saveQrImage, deleteQrImage } = require('./qrImage');
 const log = require('./logger');
 
 let client;
@@ -29,8 +30,17 @@ function startWhatsApp() {
     client.on('qr', (qr) => {
       log.info('Scan this QR code with WhatsApp (Settings > Linked devices):');
       qrcode.generate(qr, { small: true });
+      saveQrImage(qr)
+        .then(() => { if (authenticated) deleteQrImage(); })
+        .catch((err) => log.warn('Could not save QR image:', err.message));
+    });
+    let authenticated = false;
+    client.on('authenticated', () => {
+      authenticated = true;
+      deleteQrImage();
     });
     client.on('ready', async () => {
+      deleteQrImage();
       const linked = client.info && client.info.wid && client.info.wid.user;
       if (linked !== expected) {
         await client.destroy().catch(() => {});
@@ -146,10 +156,43 @@ async function resolveChatId(target) {
   throw new Error(`WhatsApp group/channel "${target}" not found. Run "npm run list-chats" to see IDs.`);
 }
 
+/**
+ * Waits until WhatsApp's server has accepted the message (ack >= 1, one grey tick).
+ * sendMessage() returns as soon as the message is queued; group messages need
+ * encryption keys set up first, so a process that exits straight away loses them.
+ */
+async function waitForServerAck(chatId, msg, sentAfterMs, timeoutMs = 60000) {
+  // For groups in LID mode the library returns no message, so fall back to the
+  // newest message we sent in that chat since the send started
+  const id = msg && msg.id && msg.id._serialized;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ack = await client.pupPage.evaluate((msgId, chat, sentAfter) => {
+      const C = window.require('WAWebCollections');
+      if (msgId) {
+        const m = C.Msg.get(msgId);
+        if (m) return m.ack;
+      }
+      const c = C.Chat.get(chat);
+      const mine = c ? c.msgs.getModelsArray().filter((m) => m.id.fromMe && m.t * 1000 >= sentAfter - 2000) : [];
+      return mine.length ? mine[mine.length - 1].ack : null;
+    }, id || null, chatId, sentAfterMs);
+    if (ack >= 1) return;
+    if (ack === -1) throw new Error('WhatsApp rejected the message');
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  // Not retried: the queued message may still go out later and arrive twice
+  const err = new Error(`Message not confirmed by WhatsApp within ${timeoutMs / 1000}s (bot number in the group and allowed to post?)`);
+  err.noRetry = true;
+  throw err;
+}
+
 async function sendMessage(target, text) {
   await startWhatsApp();
   const chatId = await resolveChatId(target);
-  await client.sendMessage(chatId, text);
+  const started = Date.now();
+  const msg = await client.sendMessage(chatId, text);
+  await waitForServerAck(chatId, msg, started);
   log.info(`Message sent to ${chatId}`);
 }
 
@@ -160,11 +203,13 @@ async function sendImage(target, base64Png, caption) {
       await ensureWhatsApp();
       const chatId = await resolveChatId(target);
       const media = new MessageMedia('image/png', base64Png, 'sheet.png');
-      await client.sendMessage(chatId, media, { caption });
+      const started = Date.now();
+      const msg = await client.sendMessage(chatId, media, { caption });
+      await waitForServerAck(chatId, msg, started);
       log.info(`Screenshot sent to ${chatId}`);
       return;
     } catch (err) {
-      if (attempt >= 2) throw err;
+      if (attempt >= 2 || err.noRetry) throw err;
       log.warn(`Sending failed (${err.message}), reconnecting and retrying`);
       await reconnect();
     }
