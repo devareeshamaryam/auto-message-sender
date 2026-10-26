@@ -1,4 +1,5 @@
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const { exec } = require('child_process');
 const QRCode = require('qrcode');
@@ -28,7 +29,39 @@ async function saveQrImage(qr, { open = process.platform === 'win32' } = {}) {
     pageOpened = true;
     log.info(`Live QR page (always shows the newest QR): ${QR_PAGE}`);
     if (open) exec(`start "" "${QR_PAGE}"`, (err) => err && log.warn('Could not open QR page:', err.message));
+    startQrServer();
   }
+}
+
+/**
+ * On a server with no screen, QR_PORT serves the live QR page on 127.0.0.1 only.
+ * Open it from your own PC through an SSH tunnel:
+ *   ssh -L 8080:localhost:8080 root@SERVER   then browse to http://localhost:8080
+ */
+let qrServer;
+function startQrServer() {
+  const port = parseInt(process.env.QR_PORT || '', 10);
+  if (!port || qrServer) return;
+  qrServer = http.createServer((req, res) => {
+    const file = req.url.startsWith('/qr.png') ? QR_FILE : QR_PAGE;
+    if (!fs.existsSync(file)) {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': file === QR_FILE ? 'image/png' : 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    fs.createReadStream(file).pipe(res);
+  });
+  qrServer.on('error', (err) => log.warn('QR page server failed:', err.message));
+  qrServer.listen(port, '127.0.0.1', () => log.info(`QR page served at http://localhost:${port} (on the server; open it through an SSH tunnel)`));
+}
+
+function stopQrServer() {
+  if (!qrServer) return;
+  // Give the open page a moment to show "Connected" before closing
+  const server = qrServer;
+  qrServer = null;
+  setTimeout(() => server.close(), 20000).unref();
 }
 
 /** Removes the QR image once login has succeeded; the open page then says "Connected". */
@@ -47,6 +80,7 @@ function deleteQrImage() {
     log.warn('Could not delete QR image:', err.message);
   }
   pageOpened = false;
+  stopQrServer();
 }
 
 function qrPageHtml() {

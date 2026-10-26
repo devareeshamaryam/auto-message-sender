@@ -3,6 +3,7 @@ const os = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
 const puppeteer = require('puppeteer');
+const { chromePath } = require('./browser');
 
 /**
  * Screenshots the first report block of a tab from Google's HTML export, so the
@@ -26,7 +27,7 @@ async function captureReport(zipBuffer, tabName, lastColumn, browser) {
     if (ownBrowser) {
       browser = await puppeteer.launch({
         headless: true,
-        executablePath: process.env.CHROME_PATH || undefined,
+        executablePath: chromePath(),
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
     }

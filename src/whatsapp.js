@@ -2,6 +2,7 @@ const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const config = require('./config');
 const { saveQrImage, deleteQrImage } = require('./qrImage');
+const { chromePath } = require('./browser');
 const log = require('./logger');
 
 let client;
@@ -20,7 +21,7 @@ function startWhatsApp() {
     authStrategy: new LocalAuth(),
     puppeteer: {
       headless: true,
-      executablePath: process.env.CHROME_PATH || undefined,
+      executablePath: chromePath(),
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     },
   });
