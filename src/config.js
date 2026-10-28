@@ -50,7 +50,8 @@ module.exports = {
     { name: 'Shaver', sourceId: () => required('SHAVER_SPREADSHEET_ID'), hourlyLabel: process.env.SHAVER_HOURLY_LABEL || 'SHAVER ST' },
   ],
   whatsapp: {
-    target: () => normaliseTarget(required('WHATSAPP_TARGET')),
+    // One or more targets, comma-separated: WHATSAPP_TARGET=1203...@g.us,1203...@g.us
+    targets: () => required('WHATSAPP_TARGET').split(',').map((t) => t.trim()).filter(Boolean).map(normaliseTarget),
     // Number of the account expected to be linked (safety check only; login is by QR code)
     sender: () => digitsOnly(required('WHATSAPP_SENDER')),
   },

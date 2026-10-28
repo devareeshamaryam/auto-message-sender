@@ -32,6 +32,7 @@ function markSent(slot, note) {
   // Keep the last few days only
   const keys = Object.keys(state.sent).sort();
   for (const k of keys.slice(0, Math.max(0, keys.length - 100))) delete state.sent[k];
+  for (const k of Object.keys(state.partial || {})) if (k < slot.slice(0, 10)) delete state.partial[k];
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
@@ -57,18 +58,20 @@ async function tick() {
   if (Date.now() - lastFailure < RETRY_MINUTES * 60000) return;
 
   busy = true;
+  // Groups that already got this slot before a failure further down the list
+  state.partial = state.partial || {};
+  const already = state.partial[slot] || [];
   try {
-    await runJob({ date, hour });
+    await runJob({ date, hour, skipTargets: already });
+    delete state.partial[slot];
     markSent(slot);
   } catch (err) {
-    if (err.noRetry) {
-      // WhatsApp queued the message but didn't confirm it; resending could post it twice
-      log.error(`Slot ${slot}: ${err.message} - not resending`);
-      markSent(slot, 'unconfirmed');
-    } else {
-      lastFailure = Date.now();
-      log.error(`Slot ${slot} failed: ${err.message} - retrying in ${RETRY_MINUTES} minutes`);
+    if (err.sentTo && err.sentTo.length) {
+      state.partial[slot] = [...new Set([...already, ...err.sentTo])];
+      fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
     }
+    lastFailure = Date.now();
+    log.error(`Slot ${slot} failed: ${err.message} - retrying in ${RETRY_MINUTES} minutes`);
   } finally {
     busy = false;
   }

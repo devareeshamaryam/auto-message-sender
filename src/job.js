@@ -19,12 +19,14 @@ const EMPTY_ROW = Array(9).fill('');
  *
  * A store whose table for today can't be found gets an empty row, never the
  * previous day's numbers. Throws if the run fails, so the scheduler can retry.
- * Options: { date, hour (store-time hour for the caption), send, write }.
+ * Options: { date, hour (store-time hour for the caption), send, write,
+ * skipTargets (already sent this slot) }. A failed send carries err.sentTo.
  */
-async function runJob({ date = reportDate(), hour = currentHour(), send = true, write = true } = {}) {
+async function runJob({ date = reportDate(), hour = currentHour(), send = true, write = true, skipTargets = [] } = {}) {
   if (running) throw new Error('Previous run still in progress');
   running = true;
   const started = Date.now();
+  const sentTo = [];
 
   try {
     const targetId = config.google.targetId();
@@ -58,7 +60,25 @@ async function runJob({ date = reportDate(), hour = currentHour(), send = true, 
     }
 
     const image = await captureFresh(targetId, tab, write ? expected : null);
-    if (send) await sendImage(config.whatsapp.target(), image, caption);
+    if (send) {
+      // Skip targets that already got this slot (a retry after a partial send)
+      for (const target of config.whatsapp.targets().filter((t) => !skipTargets.includes(t))) {
+        try {
+          await sendImage(target, image, caption);
+          sentTo.push(target);
+        } catch (err) {
+          if (err.noRetry) {
+            // Queued but not confirmed: resending could post it twice, so count it and move on
+            log.error(`${target}: ${err.message} - not resending`);
+            sentTo.push(target);
+            continue;
+          }
+          err.sentTo = sentTo;
+          err.message = `${target}: ${err.message}`;
+          throw err;
+        }
+      }
+    }
     log.info(`Run finished in ${((Date.now() - started) / 1000).toFixed(1)}s (caption "${caption}")`);
     return [{ title: 'HOURLY', image }];
   } finally {

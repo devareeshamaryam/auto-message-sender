@@ -5,7 +5,7 @@ const log = require('./logger');
 
 (async () => {
   await startWhatsApp();
-  await sendMessage(config.whatsapp.target(), 'Test from bot');
+  for (const target of config.whatsapp.targets()) await sendMessage(target, 'Test from bot');
   log.info('Test message sent. WhatsApp link works.');
   process.exit(0);
 })().catch((err) => {

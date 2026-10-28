@@ -56,7 +56,7 @@ function startWhatsApp() {
       } catch (err) {
         log.warn('Could not apply media-send fix:', err.message);
       }
-      const target = process.env.WHATSAPP_TARGET ? config.whatsapp.target() : '(WHATSAPP_TARGET not set)';
+      const target = process.env.WHATSAPP_TARGET ? config.whatsapp.targets().join(', ') : '(WHATSAPP_TARGET not set)';
       log.info(`Logged in as ${linked}, sending to ${target}`);
       resolve(client);
     });
