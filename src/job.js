@@ -46,9 +46,11 @@ async function runJob({ date = reportDate(), hour = currentHour(), send = true, 
         // Clear the row rather than leave yesterday's figures on the screenshot
         log.warn(`${store.name}: ${err.message} - its row will be left empty`);
       }
-      expected.push({ label: store.hourlyLabel, values });
+      expected.push({ label: store.hourlyLabel, values, total: Math.round(total * 100) / 100 });
       if (write) {
         await sheets.updateRange(targetId, `${sheets.quoteTab(tab)}!C${row}:K${row}`, [values]);
+        // TOTAL (M) must be the sheet's formula; it has been overwritten with a typed number before
+        await sheets.updateRange(targetId, `${sheets.quoteTab(tab)}!M${row}`, [[`=D${row}+F${row}+H${row}+J${row}+K${row}`]]);
         log.info(`${store.name}: wrote HOURLY row ${row} (total $${total.toFixed(2)})`);
       } else {
         log.info(`${store.name}: would write HOURLY row ${row} C:K = ${JSON.stringify(values)} (total $${total.toFixed(2)})`);

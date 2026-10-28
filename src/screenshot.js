@@ -63,7 +63,7 @@ async function captureReport(zipBuffer, tabName, lastColumn, expected, browser) 
           return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
         };
         const rows = [...document.querySelectorAll('table tbody tr')];
-        for (const { label, values } of expected) {
+        for (const { label, values, total } of expected) {
           const row = rows.find((r) => {
             const first = r.querySelector('td');
             return first && first.innerText.trim().toUpperCase() === label.toUpperCase();
@@ -74,6 +74,10 @@ async function captureReport(zipBuffer, tabName, lastColumn, expected, browser) 
             // values start at column C, i.e. the third data cell
             const shown = cells[i + 2] ? cells[i + 2].innerText : '';
             if (num(shown) !== num(values[i])) return `${label} column ${String.fromCharCode(67 + i)} shows "${shown.trim()}", expected "${values[i]}"`;
+          }
+          // TOTAL is column M, the 13th data cell
+          if (total !== undefined && cells[12] && num(cells[12].innerText) !== num(total)) {
+            return `${label} TOTAL shows "${cells[12].innerText.trim()}", expected "${total}"`;
           }
         }
         return null;
