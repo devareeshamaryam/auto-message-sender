@@ -11,9 +11,10 @@ const { chromePath } = require('./browser');
  *
  * The block runs from the top of the tab down to the first TOTAL SALES row,
  * and from column A to `lastColumn` (1-based, e.g. 13 = M). Returns a base64 PNG.
- * Pass an existing Puppeteer browser to reuse it (e.g. the WhatsApp one).
+ * `expected` ([{ label, values }], values for columns C onward) makes it check
+ * that the export shows exactly those numbers, and throw (err.stale) if not.
  */
-async function captureReport(zipBuffer, tabName, lastColumn, browser) {
+async function captureReport(zipBuffer, tabName, lastColumn, expected, browser) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sheet-export-'));
   const ownBrowser = !browser;
   let page;
@@ -53,6 +54,36 @@ async function captureReport(zipBuffer, tabName, lastColumn, browser) {
       return { width: Math.ceil(t.scrollWidth) + 20, height: Math.ceil(t.scrollHeight) + 20 };
     });
     await page.setViewport({ ...size, deviceScaleFactor: 2 });
+
+    // Google's export can briefly lag behind a write; refuse to screenshot old numbers
+    if (expected && expected.length) {
+      const mismatch = await page.evaluate((expected) => {
+        const num = (v) => {
+          const n = parseFloat(String(v ?? '').replace(/[$,\s]/g, ''));
+          return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+        };
+        const rows = [...document.querySelectorAll('table tbody tr')];
+        for (const { label, values } of expected) {
+          const row = rows.find((r) => {
+            const first = r.querySelector('td');
+            return first && first.innerText.trim().toUpperCase() === label.toUpperCase();
+          });
+          if (!row) return `row "${label}" not found`;
+          const cells = [...row.querySelectorAll('td')];
+          for (let i = 0; i < values.length; i++) {
+            // values start at column C, i.e. the third data cell
+            const shown = cells[i + 2] ? cells[i + 2].innerText : '';
+            if (num(shown) !== num(values[i])) return `${label} column ${String.fromCharCode(67 + i)} shows "${shown.trim()}", expected "${values[i]}"`;
+          }
+        }
+        return null;
+      }, expected);
+      if (mismatch) {
+        const err = new Error(`Export not updated yet: ${mismatch}`);
+        err.stale = true;
+        throw err;
+      }
+    }
 
     const clip = await page.evaluate((lastColumn) => {
       const rows = [...document.querySelectorAll('table tbody tr')];

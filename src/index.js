@@ -1,24 +1,22 @@
-const cron = require('node-cron');
-const config = require('./config');
 const { startWhatsApp } = require('./whatsapp');
 const { runJob } = require('./job');
+const { startScheduler } = require('./scheduler');
 const log = require('./logger');
 
 async function main() {
   await startWhatsApp();
 
   if (process.argv.includes('--now')) {
-    await runJob();
-    process.exit(0);
+    try {
+      await runJob();
+      process.exit(0);
+    } catch (err) {
+      log.error('Run failed:', err.message);
+      process.exit(1);
+    }
   }
 
-  if (!cron.validate(config.schedule.cron)) {
-    throw new Error(`Invalid CRON_SCHEDULE: ${config.schedule.cron}`);
-  }
-  cron.schedule(config.schedule.cron, runJob, { timezone: config.schedule.timezone });
-  log.info(`Scheduled "${config.schedule.cron}" (${config.schedule.timezone}). Waiting for next run...`);
-
-  if (config.schedule.runOnStart) await runJob();
+  await startScheduler();
 }
 
 process.on('unhandledRejection', (err) => log.error('Unhandled:', err));

@@ -23,6 +23,18 @@ function normaliseTarget(value) {
   return v;
 }
 
+/** "12-19" or "9,12-14" -> [12, 13, ..., 19]. */
+function parseHours(spec) {
+  const hours = new Set();
+  for (const part of String(spec || '').split(',')) {
+    const [a, b] = part.trim().split('-').map(Number);
+    if (!Number.isInteger(a)) continue;
+    for (let h = a; h <= (Number.isInteger(b) ? b : a); h++) if (h >= 0 && h <= 23) hours.add(h);
+  }
+  if (!hours.size) throw new Error(`Invalid SEND_HOURS "${spec}"`);
+  return [...hours].sort((x, y) => x - y);
+}
+
 module.exports = {
   google: {
     keyFile: path.resolve(__dirname, '..', process.env.GOOGLE_SERVICE_ACCOUNT_FILE || './credentials/service-account.json'),
@@ -43,7 +55,12 @@ module.exports = {
     sender: () => digitsOnly(required('WHATSAPP_SENDER')),
   },
   schedule: {
-    cron: process.env.CRON_SCHEDULE || '0 0-18 * * *',
+    // Store-time hours that get a screenshot, e.g. "12-19" = Till 12 PM ... Till 7 PM.
+    // Falls back to the hour field of CRON_SCHEDULE ("0 12-19 * * *").
+    hours: parseHours(process.env.SEND_HOURS || (process.env.CRON_SCHEDULE || '0 12-19 * * *').split(/\s+/)[1]),
+    // A slot missed (PC asleep, restart, error) is still sent until this many minutes past the hour
+    lateMinutes: parseInt(process.env.LATE_MINUTES || '50', 10),
+    cron: process.env.CRON_SCHEDULE || '0 12-19 * * *',
     timezone: process.env.TIMEZONE || 'Asia/Karachi',
     runOnStart: process.env.RUN_ON_START === 'true',
     // Runs before this hour report the previous day, so the midnight run sends the finished day

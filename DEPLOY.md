@@ -31,16 +31,32 @@ Server par yeh commands chalayein (poora block copy-paste kar dein):
 apt update && apt upgrade -y
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs
-apt install -y ca-certificates fonts-liberation fonts-dejavu-core libasound2t64 \
-  libatk-bridge2.0-0t64 libatk1.0-0t64 libcups2t64 libdrm2 libgbm1 libgtk-3-0t64 \
-  libnspr4 libnss3 libpango-1.0-0 libcairo2 libxcomposite1 libxdamage1 libxfixes3 \
-  libxkbcommon0 libxrandr2 libxshmfence1
 npm install -g pm2
 ufw allow OpenSSH && ufw --force enable
 node -v
 ```
 
 Aakhir mein `v22.x.x` nazar aana chahiye.
+
+Phir Chrome ki libraries install karein. Pehle `lsb_release -rs` chala kar dekhein ke server ka Ubuntu version kya hai, phir usi ke hisaab se **ek** block chalayein.
+
+**Ubuntu 24.04:**
+```
+apt install -y ca-certificates fonts-liberation fonts-dejavu-core libasound2t64 \
+  libatk-bridge2.0-0t64 libatk1.0-0t64 libcups2t64 libdrm2 libgbm1 libgtk-3-0t64 \
+  libnspr4 libnss3 libpango-1.0-0 libcairo2 libxcomposite1 libxdamage1 libxfixes3 \
+  libxkbcommon0 libxrandr2 libxshmfence1
+```
+
+**Ubuntu 22.04:**
+```
+apt install -y ca-certificates fonts-liberation fonts-dejavu-core libasound2 \
+  libatk-bridge2.0-0 libatk1.0-0 libcups2 libdrm2 libgbm1 libgtk-3-0 \
+  libnspr4 libnss3 libpango-1.0-0 libcairo2 libxcomposite1 libxdamage1 libxfixes3 \
+  libxkbcommon0 libxrandr2 libxshmfence1
+```
+
+Agar `Unable to locate package` aaye, to dusra block chala kar dekhein.
 
 ## 3. Project server par bhejein
 
@@ -139,7 +155,9 @@ Check karein:
 ```
 pm2 logs sheets-bot --lines 20
 ```
-Yeh nazar aana chahiye: `Scheduled "0 12-19 * * *" (America/Chicago). Waiting for next run...`
+Yeh nazar aana chahiye: `Sending every hour 12:00-19:50 (America/Chicago), one screenshot per hour`
+
+Har kamyab ghante ke baad log mein `Run finished ... (caption "Till 1 PM")` aata hai. Agar koi ghanta reh jaye to `Slot ... missed` ya `Slot ... failed` likha aata hai, aur us ke saath wajah bhi.
 
 **Deploy mukammal.** Ab PC band bhi ho to har ghante 12–7 PM (Texas) screenshot jayegi.
 
