@@ -1,7 +1,7 @@
 const config = require('./config');
 const sheets = require('./sheets');
 const { findDailyTables, summariseTable } = require('./daily');
-const { findStoreRow, buildRowValues } = require('./target');
+const { findStoreRow, buildRowValues, findDayRow, buildDayValues } = require('./target');
 const { captureReport } = require('./screenshot');
 const { sendImage } = require('./whatsapp');
 const log = require('./logger');
@@ -14,8 +14,9 @@ const EMPTY_ROW = Array(9).fill('');
 
 /**
  * One run: for each store, find today's table in its sheet and write the
- * figures into its row of the target's HOURLY tab, then send one screenshot
- * of the HOURLY report captioned "Till <hour>". Nothing else is sent.
+ * figures into its row of the target's HOURLY tab and its day's row in the
+ * DATA ENTRY tab, then send one screenshot of the HOURLY report captioned
+ * "Till <hour>". Nothing else is sent.
  *
  * A store whose table for today can't be found gets an empty row, never the
  * previous day's numbers. Throws if the run fails, so the scheduler can retry.
@@ -35,6 +36,7 @@ async function runJob({ date = reportDate(), hour = currentHour(), send = true, 
     log.info(`Report date ${date}, slot "${caption}"`);
 
     const grid = await sheets.readGrid(targetId, tab);
+    const dataEntry = await loadDataEntry(targetId);
     const expected = [];
     for (const store of config.stores) {
       const row = findStoreRow(grid, store.hourlyLabel);
@@ -44,6 +46,7 @@ async function runJob({ date = reportDate(), hour = currentHour(), send = true, 
         const day = await readStoreDay(store, date);
         values = buildRowValues(day);
         total = day.total;
+        await writeDataEntry(targetId, dataEntry, store, date, day, write);
       } catch (err) {
         // Clear the row rather than leave yesterday's figures on the screenshot
         log.warn(`${store.name}: ${err.message} - its row will be left empty`);
@@ -100,6 +103,34 @@ async function captureFresh(targetId, tab, expected) {
     }
   }
 }
+/** The DATA ENTRY tab's title and grid, or null if it can't be read (the hourly report still goes out). */
+async function loadDataEntry(targetId) {
+  try {
+    const tab = await resolveTab(targetId, config.google.dataEntryTab);
+    return { tab, grid: await sheets.readGrid(targetId, tab) };
+  } catch (err) {
+    log.warn(`DATA ENTRY: ${err.message} - skipping it this run`);
+    return null;
+  }
+}
+
+/** Fills the store's row for `date` in the DATA ENTRY tab (C..P). Problems are logged, never thrown. */
+async function writeDataEntry(targetId, dataEntry, store, date, day, write) {
+  if (!dataEntry) return;
+  try {
+    const row = findDayRow(dataEntry.grid, store.dataEntryTitle, date);
+    const values = buildDayValues(day);
+    if (write) {
+      await sheets.updateRange(targetId, `${sheets.quoteTab(dataEntry.tab)}!C${row}:P${row}`, [values]);
+      log.info(`${store.name}: wrote DATA ENTRY row ${row}`);
+    } else {
+      log.info(`${store.name}: would write DATA ENTRY row ${row} C:P = ${JSON.stringify(values)}`);
+    }
+  } catch (err) {
+    log.warn(`${store.name}: DATA ENTRY not updated - ${err.message}`);
+  }
+}
+
 /** The tab's real title, ignoring case and stray spaces (the HOURLY tab is named "HOURLY "). */
 async function resolveTab(spreadsheetId, name) {
   const tabs = await sheets.listTabs(spreadsheetId);

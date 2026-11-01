@@ -43,11 +43,24 @@ module.exports = {
     hourlyTab: process.env.HOURLY_TAB || 'HOURLY',
     // Screenshot goes from column A to this column (13 = M, TOTAL)
     hourlyLastColumn: parseInt(process.env.HOURLY_LAST_COLUMN || '13', 10),
+    // Tab with one monthly table per store; the bot also fills the day's row there (C..P)
+    dataEntryTab: process.env.DATA_ENTRY_TAB || 'DATA ENTRY',
   },
-  // Each store's daily sales sheet, and the label of its row in the HOURLY tab
+  // Each store's daily sales sheet, the label of its row in the HOURLY tab,
+  // and the title of its monthly table in the DATA ENTRY tab
   stores: [
-    { name: 'Bellfort', sourceId: () => required('BELLFORT_SPREADSHEET_ID'), hourlyLabel: process.env.BELLFORT_HOURLY_LABEL || 'BELLFORT AVE' },
-    { name: 'Shaver', sourceId: () => required('SHAVER_SPREADSHEET_ID'), hourlyLabel: process.env.SHAVER_HOURLY_LABEL || 'SHAVER ST' },
+    {
+      name: 'Bellfort',
+      sourceId: () => required('BELLFORT_SPREADSHEET_ID'),
+      hourlyLabel: process.env.BELLFORT_HOURLY_LABEL || 'BELLFORT AVE',
+      dataEntryTitle: process.env.BELLFORT_DATA_ENTRY_TITLE || 'PHONE REPAIR STORE',
+    },
+    {
+      name: 'Shaver',
+      sourceId: () => required('SHAVER_SPREADSHEET_ID'),
+      hourlyLabel: process.env.SHAVER_HOURLY_LABEL || 'SHAVER ST',
+      dataEntryTitle: process.env.SHAVER_DATA_ENTRY_TITLE || 'SHAVER STORE',
+    },
   ],
   whatsapp: {
     // One or more targets, comma-separated: WHATSAPP_TARGET=1203...@g.us,1203...@g.us
