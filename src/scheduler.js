@@ -12,12 +12,16 @@ const log = require('./logger');
  * slot that hasn't been sent yet is sent, until LATE_MINUTES past the hour.
  * Failed runs are retried every RETRY_MINUTES. Sent slots are remembered in
  * state.json, so a restart never sends the same hour twice.
+ *
+ * When no send is due, the sheet is still updated (nothing sent) every
+ * UPDATE_MINUTES, around the clock, so late entries reach the sheet too.
  */
 const STATE_FILE = path.join(__dirname, '..', 'state.json');
 const RETRY_MINUTES = 3;
 
 let state = loadState();
 let lastFailure = 0;
+let lastUpdate = 0;
 
 function loadState() {
   try {
@@ -48,8 +52,7 @@ async function tick() {
   const date = reportDate();
   const slot = `${date} ${String(hour).padStart(2, '0')}`;
 
-  if (!config.schedule.hours.includes(hour)) return;
-  if (state.sent[slot]) return;
+  if (!config.schedule.hours.includes(hour) || state.sent[slot]) return updateSheet(date, hour);
   if (minute > config.schedule.lateMinutes) {
     log.error(`Slot ${slot} missed: not sent by ${config.schedule.lateMinutes} minutes past the hour`);
     markSent(slot, 'missed');
@@ -77,9 +80,24 @@ async function tick() {
   }
 }
 
+/** Writes the latest figures into the sheet without sending, at most every UPDATE_MINUTES. */
+async function updateSheet(date, hour) {
+  if (Date.now() - lastUpdate < config.schedule.updateMinutes * 60000) return;
+  busy = true;
+  lastUpdate = Date.now();
+  try {
+    await runJob({ date, hour, send: false });
+  } catch (err) {
+    log.error(`Sheet update failed: ${err.message} - trying again in ${config.schedule.updateMinutes} minutes`);
+  } finally {
+    busy = false;
+  }
+}
+
 function startScheduler() {
   const hours = config.schedule.hours;
   log.info(`Sending every hour ${hours[0]}:00-${hours[hours.length - 1]}:${String(config.schedule.lateMinutes).padStart(2, '0')} (${config.schedule.timezone}), one screenshot per hour`);
+  log.info(`Updating the sheet every ${config.schedule.updateMinutes} minutes, 24/7`);
   setInterval(() => tick().catch((err) => log.error('Scheduler error:', err.message)), 60 * 1000);
   return tick();
 }

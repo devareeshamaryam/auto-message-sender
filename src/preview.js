@@ -9,7 +9,7 @@ const { runJob } = require('./job');
 (async () => {
   const date = process.argv.slice(2).find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
   const write = process.argv.includes('--write');
-  const shots = await runJob({ date, write, send: false });
+  const shots = await runJob({ date, write, send: false, capture: true });
 
   const dir = path.join(__dirname, '..', 'preview');
   fs.mkdirSync(dir, { recursive: true });

@@ -21,9 +21,10 @@ const EMPTY_ROW = Array(9).fill('');
  * A store whose table for today can't be found gets an empty row, never the
  * previous day's numbers. Throws if the run fails, so the scheduler can retry.
  * Options: { date, hour (store-time hour for the caption), send, write,
- * skipTargets (already sent this slot) }. A failed send carries err.sentTo.
+ * capture (take the screenshot; defaults to send), skipTargets (already sent
+ * this slot) }. A failed send carries err.sentTo.
  */
-async function runJob({ date = reportDate(), hour = currentHour(), send = true, write = true, skipTargets = [] } = {}) {
+async function runJob({ date = reportDate(), hour = currentHour(), send = true, write = true, capture = send, skipTargets = [] } = {}) {
   if (running) throw new Error('Previous run still in progress');
   running = true;
   const started = Date.now();
@@ -68,9 +69,13 @@ async function runJob({ date = reportDate(), hour = currentHour(), send = true, 
 
     if (problems.length) {
       // Never post a report with a store missing or the sheet half-updated; the scheduler retries
-      const message = `sheet not fully updated, nothing sent: ${problems.join('; ')}`;
+      const message = `sheet not fully updated${send ? ', nothing sent' : ''}: ${problems.join('; ')}`;
       if (send) throw new Error(message);
       log.warn(message);
+    }
+    if (!capture) {
+      log.info(`Sheet updated in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+      return [];
     }
 
     const image = await captureFresh(targetId, tab, write ? expected : null);

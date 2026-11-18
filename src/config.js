@@ -74,6 +74,8 @@ module.exports = {
     hours: parseHours(process.env.SEND_HOURS || (process.env.CRON_SCHEDULE || '0 12-19 * * *').split(/\s+/)[1]),
     // A slot missed (PC asleep, restart, error) is still sent until this many minutes past the hour
     lateMinutes: parseInt(process.env.LATE_MINUTES || '50', 10),
+    // Between sends the sheet is still updated (no message) every this many minutes, 24/7
+    updateMinutes: parseInt(process.env.UPDATE_MINUTES || '10', 10),
     cron: process.env.CRON_SCHEDULE || '0 12-19 * * *',
     timezone: process.env.TIMEZONE || 'Asia/Karachi',
     runOnStart: process.env.RUN_ON_START === 'true',
