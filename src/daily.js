@@ -42,8 +42,14 @@ function isoDate(y, m, d) {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+/**
+ * The column header row: BILL PAYMENTS | COST | S. PRICE | ACTIVATION | ...
+ * Column A's label is not checked, since staff have renamed it (the Shaver
+ * sheet's November tab says "REPAIRS" there).
+ */
 function isColumnHeader(row) {
-  return clean((row || [])[0]).toUpperCase() === 'BILL PAYMENTS' && clean((row || [])[1]).toUpperCase() === 'COST';
+  const h = (row || []).map((c) => clean(c).toUpperCase());
+  return h[1] === 'COST' && h[2] === 'S. PRICE' && h.includes('ACTIVATION');
 }
 
 function dateInRows(grid, from, to) {
@@ -92,10 +98,12 @@ function findDailyTables(grid) {
 function locateColumns(header) {
   const h = header.map((c) => clean(c).toUpperCase());
   const find = (label, from = 0) => h.findIndex((c, i) => i >= from && c === label);
-  const bill = find('BILL PAYMENTS');
+  // Bill payments are always the first section, whatever column A is labelled
+  const bill = 0;
   const act = find('ACTIVATION');
-  const rep = find('REPAIRS');
-  const ph = find('PHONES');
+  // Search after each previous section, as column A may also say "REPAIRS"
+  const rep = act < 0 ? -1 : find('REPAIRS', act + 1);
+  const ph = rep < 0 ? -1 : find('PHONES', rep + 1);
   if ([bill, act, rep, ph].some((i) => i < 0)) return null;
   return {
     bill: { name: bill, price: find('S. PRICE', bill) },

@@ -38,6 +38,8 @@ async function runJob({ date = reportDate(), hour = currentHour(), send = true, 
     const grid = await sheets.readGrid(targetId, tab);
     const dataEntry = await loadDataEntry(targetId);
     const expected = [];
+    // Anything that stops a store's figures reaching the sheet; if non-empty, nothing is sent
+    const problems = dataEntry ? [] : ['DATA ENTRY tab could not be read'];
     for (const store of config.stores) {
       const row = findStoreRow(grid, store.hourlyLabel);
       let values = EMPTY_ROW;
@@ -46,10 +48,12 @@ async function runJob({ date = reportDate(), hour = currentHour(), send = true, 
         const day = await readStoreDay(store, date);
         values = buildRowValues(day);
         total = day.total;
-        await writeDataEntry(targetId, dataEntry, store, date, day, write);
+        const entryError = await writeDataEntry(targetId, dataEntry, store, date, day, write);
+        if (entryError) problems.push(`${store.name}: DATA ENTRY not updated - ${entryError}`);
       } catch (err) {
-        // Clear the row rather than leave yesterday's figures on the screenshot
+        // Clear the row rather than leave yesterday's figures in the sheet, but don't send it
         log.warn(`${store.name}: ${err.message} - its row will be left empty`);
+        problems.push(`${store.name}: ${err.message}`);
       }
       expected.push({ label: store.hourlyLabel, values, total: Math.round(total * 100) / 100 });
       if (write) {
@@ -60,6 +64,13 @@ async function runJob({ date = reportDate(), hour = currentHour(), send = true, 
       } else {
         log.info(`${store.name}: would write HOURLY row ${row} C:K = ${JSON.stringify(values)} (total $${total.toFixed(2)})`);
       }
+    }
+
+    if (problems.length) {
+      // Never post a report with a store missing or the sheet half-updated; the scheduler retries
+      const message = `sheet not fully updated, nothing sent: ${problems.join('; ')}`;
+      if (send) throw new Error(message);
+      log.warn(message);
     }
 
     const image = await captureFresh(targetId, tab, write ? expected : null);
@@ -114,9 +125,9 @@ async function loadDataEntry(targetId) {
   }
 }
 
-/** Fills the store's row for `date` in the DATA ENTRY tab (C..P). Problems are logged, never thrown. */
+/** Fills the store's row for `date` in the DATA ENTRY tab (C..P). Returns the error message if it failed, never throws. */
 async function writeDataEntry(targetId, dataEntry, store, date, day, write) {
-  if (!dataEntry) return;
+  if (!dataEntry) return null;
   try {
     const row = findDayRow(dataEntry.grid, store.dataEntryTitle, date);
     const values = buildDayValues(day);
@@ -126,8 +137,10 @@ async function writeDataEntry(targetId, dataEntry, store, date, day, write) {
     } else {
       log.info(`${store.name}: would write DATA ENTRY row ${row} C:P = ${JSON.stringify(values)}`);
     }
+    return null;
   } catch (err) {
     log.warn(`${store.name}: DATA ENTRY not updated - ${err.message}`);
+    return err.message;
   }
 }
 
